@@ -65,7 +65,7 @@ if len(seq_list) == 0:
     sys.exit(1)
 seq_list = np.array(seq_list)
 
-batch_size = 3000  # change according to GPU memory
+batch_size = 256  # changed from 3000 to avoid OOM on CPU
 
 # Predict per-species MIC (uM); average the 8 base learners.
 for ensemble_id in range(len(APEX_models)):

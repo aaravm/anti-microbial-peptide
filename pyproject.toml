@@ -22,6 +22,9 @@ dependencies = [
     # Levenshtein ratio for the top-100 novelty check (mirrors the challenge validator).
     "levenshtein>=0.25",
     "biopython>=1.83",
+    # MOME pipeline dependencies (CVT grid + analytics).
+    "scikit-learn>=1.3",
+    "matplotlib>=3.7",
 ]
 
 [tool.uv.sources]

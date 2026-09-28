@@ -1,0 +1,1 @@
+from ampdiffusion_starter_kit.mome.candidate import PeptideCandidate
