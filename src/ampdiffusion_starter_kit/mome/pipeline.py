@@ -25,7 +25,7 @@ from ampdiffusion_starter_kit.mome.analytics import (
 from ampdiffusion_starter_kit.mome.archive import MOMEArchive
 from ampdiffusion_starter_kit.mome.candidate import (
     PeptideCandidate,
-    create_candidate_mock,
+    calculate_biophysics,
 )
 from ampdiffusion_starter_kit.mome.cvt import CVTGrid
 from ampdiffusion_starter_kit.scoring import apex_score
@@ -106,7 +106,10 @@ def run_mome_pipeline(
     candidates: list[PeptideCandidate] = []
     if use_mock_scorers:
         for seq, (charge, hydro, length) in zip(valid_seqs, descriptors):
-            cand = create_candidate_mock(seq, charge, hydro)
+            # In mock mode, we just leave the efficacy at 0.0 or randomly fill it
+            # But the user isn't really using mock mode anymore.
+            cand = calculate_biophysics(seq, charge, hydro)
+            cand.efficacy = -10.0 # dummy
             candidates.append(cand)
     else:
         print("  Evaluating efficacy and confidence via APEX Ensemble...")
@@ -116,19 +119,9 @@ def run_mome_pipeline(
             workdir=output_dir / "apex_work"
         )
         for i, (seq, (charge, hydro, length)) in enumerate(zip(valid_seqs, descriptors)):
-            mock_ref = create_candidate_mock(seq, charge, hydro)
-            cand = PeptideCandidate(
-                sequence=seq,
-                charge=charge,
-                hydrophobicity=hydro,
-                length=length,
-                efficacy=float(-mean_mics[seq]),
-                safety=mock_ref.safety,
-                half_life=mock_ref.half_life,
-                solubility=mock_ref.solubility,
-                confidence=float(confidences[seq]),
-                immunogenicity=mock_ref.immunogenicity,
-            )
+            cand = calculate_biophysics(seq, charge, hydro)
+            cand.efficacy = float(-mean_mics[seq])
+            cand.confidence = float(confidences[seq])
             candidates.append(cand)
     print(f"  Scored {len(candidates)} candidates")
 

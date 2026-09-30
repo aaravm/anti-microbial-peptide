@@ -29,7 +29,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path("src").resolve()))
 
-from ampdiffusion_starter_kit.mome.candidate import PeptideCandidate, create_candidate_mock
+from ampdiffusion_starter_kit.mome.candidate import PeptideCandidate, calculate_biophysics
 from ampdiffusion_starter_kit.scoring import apex_score
 from ampdiffusion_starter_kit.mome.filters import compute_behavioral_descriptors, read_fasta_sequences
 from ampdiffusion_starter_kit.mome.pareto import dominates
@@ -60,23 +60,18 @@ def score_sequences(
         )
         candidates = []
         for seq, (charge, hydro, length) in zip(sequences, descriptors):
-            mock_ref = create_candidate_mock(seq, charge, hydro)
-            cand = PeptideCandidate(
-                sequence=seq,
-                charge=charge,
-                hydrophobicity=hydro,
-                length=length,
-                efficacy=float(-mean_mics[seq]),
-                safety=mock_ref.safety,
-                half_life=mock_ref.half_life,
-                solubility=mock_ref.solubility,
-                confidence=float(confidences[seq]),
-                immunogenicity=mock_ref.immunogenicity,
-            )
+            cand = calculate_biophysics(seq, charge, hydro)
+            cand.efficacy = float(-mean_mics[seq])
+            cand.confidence = float(confidences[seq])
             candidates.append(cand)
         return candidates
     else:
-        return [create_candidate_mock(seq, c, h) for seq, (c, h, l) in zip(sequences, descriptors)]
+        candidates = []
+        for seq, (c, h, l) in zip(sequences, descriptors):
+            cand = calculate_biophysics(seq, c, h)
+            cand.efficacy = -10.0
+            candidates.append(cand)
+        return candidates
 
 
 def print_header(title: str) -> None:
@@ -295,8 +290,8 @@ def main() -> None:
     parser.add_argument(
         "--baseline-fasta",
         type=Path,
-        default=Path("generate_broad_spectrum/top_mock.fasta"),
-        help="Path to second/Baseline FASTA (default: generate_broad_spectrum/top_mock.fasta)",
+        default=Path("generate_broad_spectrum/top_apex_mock_safety.fasta"),
+        help="Path to second/Baseline FASTA (default: generate_broad_spectrum/top_apex_mock_safety.fasta)",
     )
     parser.add_argument(
         "--output-dir",

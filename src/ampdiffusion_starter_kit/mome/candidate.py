@@ -71,53 +71,51 @@ class PeptideCandidate:
 # Mock scorers — deterministic via sequence-hash seeding
 # ---------------------------------------------------------------------------
 
-def _seq_rng(seq: str, salt: str = "") -> random.Random:
-    """Create a deterministic RNG seeded by the sequence + salt."""
-    h = hashlib.sha256((seq + salt).encode()).hexdigest()
-    return random.Random(int(h, 16) % (2**32))
+from Bio.SeqUtils.ProtParam import ProteinAnalysis
 
+# ---------------------------------------------------------------------------
+# Biophysics-based heuristics (replacing mock scorers)
+# ---------------------------------------------------------------------------
 
-def mock_score_efficacy(seq: str) -> float:
-    """Mock efficacy: negated MIC in [-200, -1]. Higher = more potent."""
-    return _seq_rng(seq, "efficacy").uniform(-200.0, -1.0)
-
-
-def mock_score_safety(seq: str) -> float:
-    """Mock safety score in [0, 100]. Higher = safer."""
-    return _seq_rng(seq, "safety").uniform(0.0, 100.0)
-
-
-def mock_score_half_life(seq: str) -> float:
-    """Mock half-life in [0, 24] hours."""
-    return _seq_rng(seq, "half_life").uniform(0.0, 24.0)
-
-
-def mock_score_solubility(seq: str) -> float:
-    """Mock solubility in [0, 1]."""
-    return _seq_rng(seq, "solubility").uniform(0.0, 1.0)
-
-
-def mock_score_confidence(seq: str) -> float:
-    """Mock model confidence in [0, 1]. 1 = confident."""
-    return _seq_rng(seq, "confidence").uniform(0.0, 1.0)
-
-
-def mock_score_immunogenicity(seq: str) -> float:
-    """Mock immunogenicity safety in [0, 1]. 1 = non-immunogenic."""
-    return _seq_rng(seq, "immunogenicity").uniform(0.0, 1.0)
-
-
-def create_candidate_mock(seq: str, charge: float, hydrophobicity: float) -> PeptideCandidate:
-    """Create a PeptideCandidate with mock scores and precomputed behavioral features."""
+def calculate_biophysics(seq: str, charge: float, hydrophobicity: float) -> PeptideCandidate:
+    """Create a PeptideCandidate with real biophysical heuristics for safety/stability."""
+    pa = ProteinAnalysis(seq)
+    
+    # Half-life proxy: aliphatic index (higher = more thermostable)
+    try:
+        aliphatic = pa.aliphatic_index()
+    except Exception:
+        aliphatic = 0.0
+        
+    # Safety proxy: instability index (lower = more stable in vivo / less likely to degrade randomly into toxic fragments)
+    # MOME maximizes, so we negate it.
+    try:
+        instability = pa.instability_index()
+    except Exception:
+        instability = 100.0
+    safety_score = -instability
+    
+    # Solubility proxy: GRAVY score (lower = more hydrophilic/soluble)
+    # MOME maximizes, so we negate it.
+    try:
+        gravy = pa.gravy()
+    except Exception:
+        gravy = 0.0
+    solubility_score = -gravy
+    
+    # Immunogenicity: longer peptides are generally more immunogenic.
+    # Score [0, 1] where 1 is safe (short).
+    immuno_score = max(0.0, 1.0 - (len(seq) / 50.0))
+    
     return PeptideCandidate(
         sequence=seq,
         charge=charge,
         hydrophobicity=hydrophobicity,
         length=len(seq),
-        efficacy=mock_score_efficacy(seq),
-        safety=mock_score_safety(seq),
-        half_life=mock_score_half_life(seq),
-        solubility=mock_score_solubility(seq),
-        confidence=mock_score_confidence(seq),
-        immunogenicity=mock_score_immunogenicity(seq),
+        efficacy=0.0,  # Filled by APEX or mock later
+        safety=safety_score,
+        half_life=aliphatic,
+        solubility=solubility_score,
+        confidence=1.0, # Filled by APEX or mock later
+        immunogenicity=immuno_score,
     )
