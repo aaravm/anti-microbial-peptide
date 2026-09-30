@@ -28,6 +28,7 @@ from ampdiffusion_starter_kit.mome.candidate import (
     create_candidate_mock,
 )
 from ampdiffusion_starter_kit.mome.cvt import CVTGrid
+from ampdiffusion_starter_kit.mome.ensemble import DeepEnsembleScorer
 from ampdiffusion_starter_kit.mome.extraction import extract_top_100
 from ampdiffusion_starter_kit.mome.filters import (
     apply_hard_filters,
@@ -101,17 +102,31 @@ def run_mome_pipeline(
             print(f"  computed {i + 1}/{len(valid_seqs)} descriptors")
 
     # ── Step 5: Score candidates ───────────────────────────────────────
-    print(f"\n[5/10] Scoring candidates ({'MOCK' if use_mock_scorers else 'REAL'})...")
+    print(f"\n[5/10] Scoring candidates ({'MOCK' if use_mock_scorers else 'DEEP ENSEMBLE'})...")
     candidates: list[PeptideCandidate] = []
-    for seq, (charge, hydro, length) in zip(valid_seqs, descriptors):
-        if use_mock_scorers:
+    if use_mock_scorers:
+        for seq, (charge, hydro, length) in zip(valid_seqs, descriptors):
             cand = create_candidate_mock(seq, charge, hydro)
-        else:
-            # TODO: plug in real APEX + Safety + Half-life + Solubility models here
-            raise NotImplementedError(
-                "Real scorers not yet implemented. Use --mock for development."
+            candidates.append(cand)
+    else:
+        print("  Evaluating efficacy and confidence via DeepEnsembleScorer...")
+        ensemble_scorer = DeepEnsembleScorer()
+        efficacies, confidences = ensemble_scorer.score_for_mome(valid_seqs)
+        for i, (seq, (charge, hydro, length)) in enumerate(zip(valid_seqs, descriptors)):
+            mock_ref = create_candidate_mock(seq, charge, hydro)
+            cand = PeptideCandidate(
+                sequence=seq,
+                charge=charge,
+                hydrophobicity=hydro,
+                length=length,
+                efficacy=float(efficacies[i]),
+                safety=mock_ref.safety,
+                half_life=mock_ref.half_life,
+                solubility=mock_ref.solubility,
+                confidence=float(confidences[i]),
+                immunogenicity=mock_ref.immunogenicity,
             )
-        candidates.append(cand)
+            candidates.append(cand)
     print(f"  Scored {len(candidates)} candidates")
 
     # ── Step 6: Penalty thresholds ─────────────────────────────────────
@@ -179,8 +194,17 @@ def main() -> None:
     parser.add_argument("--n-cells", type=int, default=175, help="Number of CVT cells")
     parser.add_argument("--top-k", type=int, default=100, help="Number of final candidates")
     parser.add_argument(
-        "--mock", action="store_true", default=True,
-        help="Use mock scorers (default; for development)",
+        "--mock",
+        dest="mock",
+        action="store_true",
+        default=False,
+        help="Use mock scorers for development (default: False, uses Deep Ensemble)",
+    )
+    parser.add_argument(
+        "--no-mock",
+        dest="mock",
+        action="store_false",
+        help="Use Deep Ensemble for efficacy and confidence (default)",
     )
 
     args = parser.parse_args()
