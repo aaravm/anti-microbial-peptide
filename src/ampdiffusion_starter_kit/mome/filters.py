@@ -29,8 +29,15 @@ IMMUNOGENICITY_THRESHOLD = 0.3  # reject if immunogenicity safety < this
 # ---------------------------------------------------------------------------
 
 def is_valid_sequence(seq: str) -> bool:
-    """Check that the sequence uses only the 20 canonical amino acids and is 8-50 residues."""
-    return MIN_LENGTH <= len(seq) <= MAX_LENGTH and set(seq).issubset(STANDARD_AA_SET)
+    """Check that the sequence uses only the 20 canonical amino acids, is 8-50 residues, and contains no Cysteines."""
+    if not (MIN_LENGTH <= len(seq) <= MAX_LENGTH):
+        return False
+    if not set(seq).issubset(STANDARD_AA_SET):
+        return False
+    # Cysteine Ban: Disulfide bridges complicate synthesis and structure prediction
+    if 'C' in seq:
+        return False
+    return True
 
 
 def passes_novelty_check(

@@ -38,11 +38,11 @@ APEX_PANEL = [
 def apex_score(
     seqs: list[str], apex_dir: Path, workdir: Path, panel: list[str] = APEX_PANEL
 ) -> tuple[dict[str, float], dict[str, float]]:
-    """Get APEX-predicted mean MIC and confidence across the 11-pathogen panel.
+    """Get APEX-predicted worst-case (max) MIC and confidence across the 11-pathogen panel.
 
     Runs the vendored APEX-pathogen ensemble in its isolated ``uv`` environment via subprocess
     (``apex/APEX_predict.py``).
-    Returns (mean_mic_dict, confidence_dict).
+    Returns (max_mic_dict, confidence_dict).
     """
     from ampdiffusion_starter_kit.generate import _write_fasta
 
@@ -67,14 +67,15 @@ def apex_score(
     if missing_var:
         raise RuntimeError(f"APEX output missing variance columns: {missing_var}")
 
-    means = df[panel].mean(axis=1)
+    # Use worst-case (max) MIC across all pathogens instead of mean
+    worst_case_mics = df[panel].max(axis=1)
     # Average the per-pathogen variance
     mean_vars = df[var_panel].mean(axis=1)
     
     # Confidence is bounded in [0, 1]
     confidences = 1.0 / (1.0 + mean_vars)
 
-    mean_dict = {str(seq): float(mic) for seq, mic in means.items()}
+    mic_dict = {str(seq): float(mic) for seq, mic in worst_case_mics.items()}
     conf_dict = {str(seq): float(conf) for seq, conf in confidences.items()}
     
-    return mean_dict, conf_dict
+    return mic_dict, conf_dict
