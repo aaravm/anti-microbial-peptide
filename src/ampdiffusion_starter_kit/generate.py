@@ -285,13 +285,27 @@ def main():
     lib_path = out_dir / "library.fasta"
     if lib_path.exists():
         print(f"Skipping diffusion, {lib_path} already exists.")
+        library = _read_fasta_sequences(lib_path)
     else:
-        print(f"Generating {args.n_sequences} sequences (seed={args.seed}, device={device})")
-        library = generate_library(
-            ema_model, esm2, std_idxs, args.n_sequences, args.seed, references, args.batch_size, device
-        )
+        print(f"Reproducing chunked library generation (seeds 1 to 5)...")
+        collected_all = []
+        for i in range(1, 6):
+            chunk = generate_library(
+                ema_model, esm2, std_idxs, 10000, i, references, args.batch_size, device
+            )
+            collected_all.extend(chunk)
+            
+        # Deduplicate preserving order
+        seen = set()
+        library = []
+        for seq in collected_all:
+            if seq not in seen:
+                seen.add(seq)
+                library.append(seq)
+        
+        # We will pad this to 50,000 using mutants below after Round 1.
         _write_fasta(library, lib_path)
-        print(f"Wrote {len(library)} sequences -> {lib_path}")
+        print(f"Wrote {len(library)} initial sequences -> {lib_path}")
 
     # --- MOME Round 1 ---
     from ampdiffusion_starter_kit.mome.pipeline import run_mome_pipeline
@@ -317,6 +331,28 @@ def main():
                 if aa != seq[i]:
                     mutants.add(seq[:i] + aa + seq[i+1:])
     
+    # --- Pad Library to 50,000 (If generated from scratch) ---
+    if len(library) < args.n_sequences:
+        needed = args.n_sequences - len(library)
+        print(f"\n--- PADDING LIBRARY TO {args.n_sequences} ---")
+        
+        # Sort mutants deterministically
+        sorted_mutants = sorted(list(mutants))
+        
+        # Find mutants not already in the library
+        available = [m for m in sorted_mutants if m not in library]
+        
+        # Shuffle with seed 42 to exactly match our manual padding script
+        import random
+        random.seed(42)
+        random.shuffle(available)
+        
+        extra = available[:needed]
+        library.extend(extra)
+        
+        _write_fasta(library, lib_path)
+        print(f"Appended {len(extra)} mutant sequences to reach exactly {len(library)}.")
+        
     mutants_fasta = out_dir / "mutants.fasta"
     _write_fasta(sorted(list(mutants)), mutants_fasta)
     print(f"Generated {len(mutants)} mutant sequences -> {mutants_fasta}")
