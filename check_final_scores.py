@@ -3,8 +3,11 @@ from pathlib import Path
 import subprocess
 
 def get_mics(fasta_path: Path):
+    if not fasta_path.exists():
+        return None, None
+        
     apex_dir = Path("apex")
-    out = Path("temp_apex_out.csv")
+    out = Path("temp_eval_out.csv")
     subprocess.run(
         ["uv", "run", "python", "APEX_predict.py", "-i", str(fasta_path.resolve()), "-o", str(out.resolve())],
         cwd=str(apex_dir),
@@ -23,15 +26,32 @@ def get_mics(fasta_path: Path):
     mean_mics = df[panel].mean(axis=1)
     max_mics = df[panel].max(axis=1)
     
+    # Clean up temp file
+    out.unlink(missing_ok=True)
+    
     return mean_mics.mean(), max_mics.mean()
 
-print("\n--- Evaluating Round 1 (Mean MIC Optimized) ---")
-r1_mean, r1_max = get_mics(Path("generate_broad_spectrum/top_round1.fasta"))
-print(f"Average Mean MIC:       {r1_mean:.1f} µM")
-print(f"Average Worst-Case MIC: {r1_max:.1f} µM")
+print("\n==================================================")
+print("FINAL SCORE COMPARISON")
+print("==================================================\n")
 
-print("\n--- Evaluating Round 2 (Worst-Case MIC Optimized) ---")
+print("--- Original Baseline (Round 1) ---")
+r1_mean, r1_max = get_mics(Path("generate_broad_spectrum/top_round1.fasta"))
+if r1_mean is not None:
+    print(f"Average Mean MIC:       {r1_mean:.1f} µM")
+    print(f"Average Worst-Case MIC: {r1_max:.1f} µM\n")
+else:
+    print("File not found.\n")
+
+print("--- Final Submission (Round 2 Hill-Climbed) ---")
 r2_mean, r2_max = get_mics(Path("generate_broad_spectrum/top.fasta"))
-print(f"Average Mean MIC:       {r2_mean:.1f} µM")
-print(f"Average Worst-Case MIC: {r2_max:.1f} µM")
-print("\n")
+if r2_mean is not None:
+    print(f"Average Mean MIC:       {r2_mean:.1f} µM")
+    print(f"Average Worst-Case MIC: {r2_max:.1f} µM")
+    
+    if r1_max is not None:
+        drop = r1_max - r2_max
+        print(f"\nTotal Worst-Case MIC Improvement: {drop:.1f} µM!")
+else:
+    print("top.fasta not found yet. Wait for the pipeline to finish!")
+print("\n==================================================")

@@ -282,12 +282,16 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     workdir = out_dir / "_work"
 
-    print(f"Generating {args.n_sequences} sequences (seed={args.seed}, device={device})")
-    library = generate_library(
-        ema_model, esm2, std_idxs, args.n_sequences, args.seed, references, args.batch_size, device
-    )
-    _write_fasta(library, out_dir / "library.fasta")
-    print(f"Wrote {len(library)} sequences -> {out_dir / 'library.fasta'}")
+    lib_path = out_dir / "library.fasta"
+    if lib_path.exists():
+        print(f"Skipping diffusion, {lib_path} already exists.")
+    else:
+        print(f"Generating {args.n_sequences} sequences (seed={args.seed}, device={device})")
+        library = generate_library(
+            ema_model, esm2, std_idxs, args.n_sequences, args.seed, references, args.batch_size, device
+        )
+        _write_fasta(library, lib_path)
+        print(f"Wrote {len(library)} sequences -> {lib_path}")
 
     # --- MOME Round 1 ---
     from ampdiffusion_starter_kit.mome.pipeline import run_mome_pipeline
