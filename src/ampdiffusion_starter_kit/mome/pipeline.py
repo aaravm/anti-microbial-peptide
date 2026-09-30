@@ -126,11 +126,11 @@ def run_mome_pipeline(
     print(f"  Scored {len(candidates)} candidates")
 
     # ── Step 6: Penalty thresholds ─────────────────────────────────────
-    print(f"\n[6/10] Applying penalty thresholds (confidence >= 0.3, immunogenicity >= 0.3)...")
+    print(f"\n[6/10] Applying penalty thresholds (confidence >= 0.3, immuno >= 0.3, MIC <= 200)...")
     pre_count = len(candidates)
     candidates = [
         c for c in candidates
-        if passes_penalty_thresholds(c.confidence, c.immunogenicity)
+        if passes_penalty_thresholds(c.confidence, c.immunogenicity, c.efficacy)
     ]
     print(f"  Kept {len(candidates)}/{pre_count} after penalty filters")
 

@@ -290,8 +290,8 @@ def main() -> None:
     parser.add_argument(
         "--baseline-fasta",
         type=Path,
-        default=Path("generate_broad_spectrum/top_apex_mock_safety.fasta"),
-        help="Path to second/Baseline FASTA (default: generate_broad_spectrum/top_apex_mock_safety.fasta)",
+        default=Path("generate_broad_spectrum/top_apex_biophysics.fasta"),
+        help="Path to second/Baseline FASTA (default: generate_broad_spectrum/top_apex_biophysics.fasta)",
     )
     parser.add_argument(
         "--output-dir",

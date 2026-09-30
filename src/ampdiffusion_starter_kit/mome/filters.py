@@ -49,11 +49,17 @@ def passes_novelty_check(
 def passes_penalty_thresholds(
     confidence: float,
     immunogenicity: float,
+    efficacy: float,
     conf_thresh: float = CONFIDENCE_THRESHOLD,
     immuno_thresh: float = IMMUNOGENICITY_THRESHOLD,
+    efficacy_thresh: float = -200.0,
 ) -> bool:
-    """Return True if the candidate passes both penalty hard thresholds."""
-    return confidence >= conf_thresh and immunogenicity >= immuno_thresh
+    """Return True if the candidate passes all penalty hard thresholds."""
+    return (
+        confidence >= conf_thresh
+        and immunogenicity >= immuno_thresh
+        and efficacy >= efficacy_thresh
+    )
 
 
 # ---------------------------------------------------------------------------
