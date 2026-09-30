@@ -35,34 +35,46 @@ APEX_PANEL = [
 ]
 
 
-def apex_mean_mic(
+def apex_score(
     seqs: list[str], apex_dir: Path, workdir: Path, panel: list[str] = APEX_PANEL
-) -> dict[str, float]:
-    """Mean APEX-predicted MIC (uM) across the 11-pathogen panel for each sequence.
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Get APEX-predicted mean MIC and confidence across the 11-pathogen panel.
 
     Runs the vendored APEX-pathogen ensemble in its isolated ``uv`` environment via subprocess
-    (``apex/APEX_predict.py`` → a per-sequence 11-pathogen matrix), then averages the columns.
-    Deterministic: a fixed set of 8 models evaluated in eval mode.
+    (``apex/APEX_predict.py``).
+    Returns (mean_mic_dict, confidence_dict).
     """
     from ampdiffusion_starter_kit.generate import _write_fasta
 
     workdir.mkdir(parents=True, exist_ok=True)
     fasta = (workdir / "apex_candidates.fasta").resolve()
     out = (workdir / "apex_pred.csv").resolve()
-    _write_fasta(seqs, fasta)  # headers are ignored by APEX_predict.py (it indexes by sequence)
+    _write_fasta(seqs, fasta)
 
-    # The isolated apex/ uv project syncs on this first call automatically. APEX_predict.py
-    # auto-detects the device (CPU here, since the isolated env pins the CPU torch build).
     subprocess.run(
         ["uv", "run", "python", "APEX_predict.py", "-i", str(fasta), "-o", str(out)],
         cwd=str(apex_dir),
         check=True,
     )
-    df = pd.read_csv(out, index_col=0)  # index = sequence, columns = the 11 pathogens
+    df = pd.read_csv(out, index_col=0)
 
     missing = [c for c in panel if c not in df.columns]
     if missing:
         raise RuntimeError(f"APEX output missing panel columns: {missing}")
 
+    var_panel = [c + "_var" for c in panel]
+    missing_var = [c for c in var_panel if c not in df.columns]
+    if missing_var:
+        raise RuntimeError(f"APEX output missing variance columns: {missing_var}")
+
     means = df[panel].mean(axis=1)
-    return {str(seq): float(mic) for seq, mic in means.items()}
+    # Average the per-pathogen variance
+    mean_vars = df[var_panel].mean(axis=1)
+    
+    # Confidence is bounded in [0, 1]
+    confidences = 1.0 / (1.0 + mean_vars)
+
+    mean_dict = {str(seq): float(mic) for seq, mic in means.items()}
+    conf_dict = {str(seq): float(conf) for seq, conf in confidences.items()}
+    
+    return mean_dict, conf_dict

@@ -30,41 +30,47 @@ import numpy as np
 sys.path.insert(0, str(Path("src").resolve()))
 
 from ampdiffusion_starter_kit.mome.candidate import PeptideCandidate, create_candidate_mock
-from ampdiffusion_starter_kit.mome.ensemble import DeepEnsembleScorer
+from ampdiffusion_starter_kit.scoring import apex_score
 from ampdiffusion_starter_kit.mome.filters import compute_behavioral_descriptors, read_fasta_sequences
 from ampdiffusion_starter_kit.mome.pareto import dominates
 
+ROOT = Path(__file__).resolve().parent
 
 # ── Helpers ────────────────────────────────────────────────────────────
 
 def score_sequences(
     sequences: list[str],
     use_ensemble: bool = True,
-    ensemble_scorer: DeepEnsembleScorer | None = None,
+    output_dir: Path | None = None,
 ) -> list[PeptideCandidate]:
-    """Score sequences with either the Deep Ensemble or mock scorers."""
+    """Score sequences with either the APEX Ensemble or mock scorers."""
     if not sequences:
         return []
+
+    if output_dir is None:
+        output_dir = Path("generate_broad_spectrum")
 
     descriptors = [compute_behavioral_descriptors(seq) for seq in sequences]
 
     if use_ensemble:
-        if ensemble_scorer is None:
-            ensemble_scorer = DeepEnsembleScorer()
-        efficacies, confidences = ensemble_scorer.score_for_mome(sequences)
+        mean_mics, confidences = apex_score(
+            seqs=sequences, 
+            apex_dir=ROOT / "apex", 
+            workdir=output_dir / "apex_work"
+        )
         candidates = []
-        for i, (seq, (charge, hydro, length)) in enumerate(zip(sequences, descriptors)):
+        for seq, (charge, hydro, length) in zip(sequences, descriptors):
             mock_ref = create_candidate_mock(seq, charge, hydro)
             cand = PeptideCandidate(
                 sequence=seq,
                 charge=charge,
                 hydrophobicity=hydro,
                 length=length,
-                efficacy=float(efficacies[i]),
+                efficacy=float(-mean_mics[seq]),
                 safety=mock_ref.safety,
                 half_life=mock_ref.half_life,
                 solubility=mock_ref.solubility,
-                confidence=float(confidences[i]),
+                confidence=float(confidences[seq]),
                 immunogenicity=mock_ref.immunogenicity,
             )
             candidates.append(cand)
@@ -289,8 +295,8 @@ def main() -> None:
     parser.add_argument(
         "--baseline-fasta",
         type=Path,
-        default=Path("generate_broad_spectrum/top_og.fasta"),
-        help="Path to second/Baseline FASTA (default: generate_broad_spectrum/top_og.fasta)",
+        default=Path("generate_broad_spectrum/top_mock.fasta"),
+        help="Path to second/Baseline FASTA (default: generate_broad_spectrum/top_mock.fasta)",
     )
     parser.add_argument(
         "--output-dir",
@@ -315,18 +321,16 @@ def main() -> None:
     label_base = args.baseline_fasta.stem.upper()
 
     print_header(f"Comparison: {label_mome} ({args.mome_fasta.name}) vs {label_base} ({args.baseline_fasta.name})")
-    print(f"Scoring mode: {'MOCK' if args.mock else 'REAL DEEP ENSEMBLE'}")
-
-    ensemble_scorer = None if args.mock else DeepEnsembleScorer()
+    print(f"Scoring mode: {'MOCK' if args.mock else 'REAL APEX ENSEMBLE'}")
 
     print(f"\nLoading and scoring {args.mome_fasta.name}...")
     mome_seqs = read_fasta_sequences(args.mome_fasta)
-    mome = score_sequences(mome_seqs, use_ensemble=not args.mock, ensemble_scorer=ensemble_scorer)
+    mome = score_sequences(mome_seqs, use_ensemble=not args.mock, output_dir=args.output_dir)
     print(f"  Loaded {len(mome)} candidates")
 
     print(f"\nLoading and scoring {args.baseline_fasta.name}...")
     baseline_seqs = read_fasta_sequences(args.baseline_fasta)
-    baseline = score_sequences(baseline_seqs, use_ensemble=not args.mock, ensemble_scorer=ensemble_scorer)
+    baseline = score_sequences(baseline_seqs, use_ensemble=not args.mock, output_dir=args.output_dir)
     print(f"  Loaded {len(baseline)} candidates")
 
     test_mean_scores(mome, baseline, label_mome, label_base)

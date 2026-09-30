@@ -28,7 +28,7 @@ from ampdiffusion_starter_kit.mome.candidate import (
     create_candidate_mock,
 )
 from ampdiffusion_starter_kit.mome.cvt import CVTGrid
-from ampdiffusion_starter_kit.mome.ensemble import DeepEnsembleScorer
+from ampdiffusion_starter_kit.scoring import apex_score
 from ampdiffusion_starter_kit.mome.extraction import extract_top_100
 from ampdiffusion_starter_kit.mome.filters import (
     apply_hard_filters,
@@ -51,7 +51,7 @@ def run_mome_pipeline(
     library_fasta: Path,
     antibacterial_fasta: Path,
     output_dir: Path,
-    n_cells: int = 175,
+    n_cells: int = 500,
     top_k: int = 100,
     max_front_size: int = 25,
     use_mock_scorers: bool = True,
@@ -102,16 +102,19 @@ def run_mome_pipeline(
             print(f"  computed {i + 1}/{len(valid_seqs)} descriptors")
 
     # ── Step 5: Score candidates ───────────────────────────────────────
-    print(f"\n[5/10] Scoring candidates ({'MOCK' if use_mock_scorers else 'DEEP ENSEMBLE'})...")
+    print(f"\n[5/10] Scoring candidates ({'MOCK' if use_mock_scorers else 'APEX ENSEMBLE'})...")
     candidates: list[PeptideCandidate] = []
     if use_mock_scorers:
         for seq, (charge, hydro, length) in zip(valid_seqs, descriptors):
             cand = create_candidate_mock(seq, charge, hydro)
             candidates.append(cand)
     else:
-        print("  Evaluating efficacy and confidence via DeepEnsembleScorer...")
-        ensemble_scorer = DeepEnsembleScorer()
-        efficacies, confidences = ensemble_scorer.score_for_mome(valid_seqs)
+        print("  Evaluating efficacy and confidence via APEX Ensemble...")
+        mean_mics, confidences = apex_score(
+            seqs=valid_seqs, 
+            apex_dir=ROOT / "apex", 
+            workdir=output_dir / "apex_work"
+        )
         for i, (seq, (charge, hydro, length)) in enumerate(zip(valid_seqs, descriptors)):
             mock_ref = create_candidate_mock(seq, charge, hydro)
             cand = PeptideCandidate(
@@ -119,11 +122,11 @@ def run_mome_pipeline(
                 charge=charge,
                 hydrophobicity=hydro,
                 length=length,
-                efficacy=float(efficacies[i]),
+                efficacy=float(-mean_mics[seq]),
                 safety=mock_ref.safety,
                 half_life=mock_ref.half_life,
                 solubility=mock_ref.solubility,
-                confidence=float(confidences[i]),
+                confidence=float(confidences[seq]),
                 immunogenicity=mock_ref.immunogenicity,
             )
             candidates.append(cand)
@@ -191,20 +194,20 @@ def main() -> None:
         "--output-dir", type=Path, default=Path("generate_broad_spectrum"),
         help="Output directory for top.fasta and metrics",
     )
-    parser.add_argument("--n-cells", type=int, default=175, help="Number of CVT cells")
+    parser.add_argument("--n-cells", type=int, default=500, help="Number of CVT cells")
     parser.add_argument("--top-k", type=int, default=100, help="Number of final candidates")
     parser.add_argument(
         "--mock",
         dest="mock",
         action="store_true",
         default=False,
-        help="Use mock scorers for development (default: False, uses Deep Ensemble)",
+        help="Use mock scorers for development (default: False, uses APEX Ensemble)",
     )
     parser.add_argument(
         "--no-mock",
         dest="mock",
         action="store_false",
-        help="Use Deep Ensemble for efficacy and confidence (default)",
+        help="Use APEX Ensemble for efficacy and confidence (default)",
     )
 
     args = parser.parse_args()

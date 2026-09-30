@@ -67,7 +67,10 @@ seq_list = np.array(seq_list)
 
 batch_size = 256  # changed from 3000 to avoid OOM on CPU
 
-# Predict per-species MIC (uM); average the 8 base learners.
+# Predict per-species MIC (uM); average the 8 base learners and compute variance.
+all_preds = []
+all_preds_raw = []
+
 for ensemble_id in range(len(APEX_models)):
     if useGPU == "1":
         AMP_model = APEX_models[ensemble_id].cuda().eval()
@@ -80,17 +83,30 @@ for ensemble_id in range(len(APEX_models)):
         seq_rep = onehot_encoding(seq_batch, max_len, word2idx)
         if useGPU == "1":
             X_seq = torch.LongTensor(seq_rep).cuda()
-            AMP_pred_batch = AMP_model(X_seq).cpu().detach().numpy()
+            AMP_pred_batch_raw = AMP_model(X_seq).cpu().detach().numpy()
         else:
             X_seq = torch.LongTensor(seq_rep)
-            AMP_pred_batch = AMP_model(X_seq).detach().numpy()
+            AMP_pred_batch_raw = AMP_model(X_seq).detach().numpy()
 
+        AMP_pred_raw = AMP_pred_batch_raw if i == 0 else np.vstack([AMP_pred_raw, AMP_pred_batch_raw])
+        
         # Training target was -log10(MIC / 1e6); invert to MIC in uM.
-        AMP_pred_batch = 10 ** (6 - AMP_pred_batch)
+        AMP_pred_batch = 10 ** (6 - AMP_pred_batch_raw)
         AMP_pred = AMP_pred_batch if i == 0 else np.vstack([AMP_pred, AMP_pred_batch])
 
-    AMP_sum = AMP_pred if ensemble_id == 0 else AMP_sum + AMP_pred
+    all_preds.append(AMP_pred)
+    all_preds_raw.append(AMP_pred_raw)
 
-AMP_pred = AMP_sum / float(len(APEX_models))
-df = pd.DataFrame(data=AMP_pred, columns=pathogen_list, index=seq_list)
+# shape: (8, N_sequences, 11_pathogens)
+all_preds = np.stack(all_preds, axis=0)
+all_preds_raw = np.stack(all_preds_raw, axis=0)
+
+AMP_mean = np.mean(all_preds, axis=0)
+# Compute variance on the RAW scale so confidence isn't penalized by the exponential
+AMP_var = np.var(all_preds_raw, axis=0)
+
+# Combine into one DataFrame: first 11 cols are means, next 11 cols are variances
+var_columns = [p + "_var" for p in pathogen_list]
+combined_data = np.hstack([AMP_mean, AMP_var])
+df = pd.DataFrame(data=combined_data, columns=pathogen_list + var_columns, index=seq_list)
 df.to_csv(out_path)
