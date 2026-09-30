@@ -59,7 +59,7 @@ def passes_penalty_thresholds(
     efficacy: float,
     conf_thresh: float = CONFIDENCE_THRESHOLD,
     immuno_thresh: float = IMMUNOGENICITY_THRESHOLD,
-    efficacy_thresh: float = -200.0,
+    efficacy_thresh: float = -300.0,
 ) -> bool:
     """Return True if the candidate passes all penalty hard thresholds."""
     return (

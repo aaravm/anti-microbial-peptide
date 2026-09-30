@@ -289,6 +289,47 @@ def main():
     _write_fasta(library, out_dir / "library.fasta")
     print(f"Wrote {len(library)} sequences -> {out_dir / 'library.fasta'}")
 
-    top = select_top(library, args.top_k, references, known_amps, workdir)
-    _write_fasta(top, out_dir / "top.fasta")
-    print(f"Wrote top {len(top)} sequences -> {out_dir / 'top.fasta'}")
+    # --- MOME Round 1 ---
+    from ampdiffusion_starter_kit.mome.pipeline import run_mome_pipeline
+    
+    print(f"\n--- MOME ROUND 1 (Initial Library) ---")
+    top_initial = run_mome_pipeline(
+        library_fasta=out_dir / "library.fasta",
+        antibacterial_fasta=Path(args.antibacterial_fasta),
+        output_dir=out_dir,
+        n_cells=500,
+        top_k=args.top_k,
+        max_front_size=25,
+        use_mock_scorers=False
+    )
+    
+    # --- Generate Mutants ---
+    print(f"\n--- GENERATING 1-EDIT MUTANTS ---")
+    mutants = set([c.sequence for c in top_initial])
+    for c in top_initial:
+        seq = c.sequence
+        for i in range(len(seq)):
+            for aa in "ACDEFGHIKLMNPQRSTVWY":
+                if aa != seq[i]:
+                    mutants.add(seq[:i] + aa + seq[i+1:])
+    
+    mutants_fasta = out_dir / "mutants.fasta"
+    _write_fasta(sorted(list(mutants)), mutants_fasta)
+    print(f"Generated {len(mutants)} mutant sequences -> {mutants_fasta}")
+    
+    # --- MOME Round 2 ---
+    print(f"\n--- MOME ROUND 2 (Hill-Climbing) ---")
+    top_final = run_mome_pipeline(
+        library_fasta=mutants_fasta,
+        antibacterial_fasta=Path(args.antibacterial_fasta),
+        output_dir=out_dir,
+        n_cells=500,
+        top_k=args.top_k,
+        max_front_size=25,
+        use_mock_scorers=False
+    )
+    
+    final_seqs = [c.sequence for c in top_final]
+    
+    _write_fasta(final_seqs, out_dir / "top.fasta")
+    print(f"\nWrote top {len(final_seqs)} sequences -> {out_dir / 'top.fasta'}")
